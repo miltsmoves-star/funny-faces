@@ -1,0 +1,92 @@
+import { GoogleGenAI } from "@google/genai";
+
+// Helper to clean base64 string
+const cleanBase64 = (base64Str: string) => {
+  return base64Str.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, '');
+};
+
+const MAX_RETRIES = 6;
+const INITIAL_BACKOFF_MS = 5000;
+
+export const generateFunnyFace = async (
+  imageBase64: string,
+  promptAddon: string = "funny cartoon character, exaggerated features, colorful, circus style"
+): Promise<string> => {
+  const apiKey = process.env.API_KEY;
+  
+  // Explicit check for the API key to help user debug deployment issues
+  if (!apiKey || apiKey.includes("placeholder") || apiKey.length < 10) {
+    console.error("API Key is missing or invalid. Current value:", apiKey);
+    throw new Error("Configuration Error: API Key is missing. Please set the API_KEY environment variable in your Vercel settings.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+  
+  // Using gemini-2.5-flash-image for image editing/generation tasks
+  const model = 'gemini-2.5-flash-image';
+
+  let lastError: any;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: {
+          parts: [
+              {
+                  text: `Transform this face into a ${promptAddon}. Keep the identity recognizable but make it a funny caricature.`
+              },
+              {
+                  inlineData: {
+                      mimeType: 'image/jpeg',
+                      data: cleanBase64(imageBase64)
+                  }
+              }
+          ]
+        }
+      });
+
+      // Parse response for image safely using optional chaining
+      const candidate = response.candidates?.[0];
+      if (candidate?.content?.parts) {
+        for (const part of candidate.content.parts) {
+          if (part.inlineData && part.inlineData.data) {
+              return `data:image/jpeg;base64,${part.inlineData.data}`;
+          }
+        }
+      }
+
+      // Log warning if finishReason suggests why it failed (e.g. SAFETY)
+      if (candidate?.finishReason) {
+          console.warn(`Gemini generation finished with reason: ${candidate.finishReason}`);
+          // If it's a safety block, retrying won't help, so we throw immediately
+          if (candidate.finishReason === 'SAFETY') {
+             throw new Error(`Generation blocked by safety filters.`);
+          }
+      }
+
+      throw new Error(`No image data received from Gemini. Finish reason: ${candidate?.finishReason || 'Unknown'}`);
+
+    } catch (error: any) {
+      lastError = error;
+      
+      // Check for Rate Limit (429) or Service Unavailable (503)
+      const isRateLimit = error.message?.includes('429') || error.status === 429 || error.code === 429;
+      const isServerOverload = error.message?.includes('503') || error.status === 503;
+
+      if ((isRateLimit || isServerOverload) && attempt < MAX_RETRIES) {
+        // Exponential backoff with a bit of jitter to smooth out requests
+        const delay = (INITIAL_BACKOFF_MS * Math.pow(2, attempt)) + (Math.random() * 1000); 
+        console.warn(`Attempt ${attempt + 1} failed with ${error.status || '429/503'}. Retrying in ${Math.round(delay)}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      
+      // If we are out of retries or it's a non-retriable error, break loop
+      break;
+    }
+  }
+
+  console.error("Gemini API Error after retries:", lastError);
+  throw lastError;
+};
