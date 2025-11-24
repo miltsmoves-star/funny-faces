@@ -1,0 +1,537 @@
+# This workflow will run tests using node and then publish a package to GitHub Packages when a release is created
+# For more information see: https://docs.github.com/en/actions/publishing-packages/publishing-nodejs-packages
+import React, { useState, useRef } from 'react';
+import { Balloon } from './Balloon';
+import { generateFunnyFace } from '../services/geminiService';
+import { GeneratedImage } from '../types';
+
+// Initial mock data for the scene before any generation
+const INITIAL_UPLOAD = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&h=400&fit=crop&q=80";
+const INITIAL_RESULT = "https://api.dicebear.com/7.x/avataaars/svg?seed=FunnyMain&top=bigHair&hairColor=f24e1e&accessories=prescription02&clothing=collarAndSweater";
+
+// Initial mock history (will be replaced by generated images)
+const INITIAL_HISTORY: GeneratedImage[] = [
+  { id: 'h1', url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=SuperHero&clothing=blazerAndShirt&clothingColor=3c4f76&top=longHairCurvy&hairColor=4a312c&accessories=kurt', timestamp: Date.now() },
+  { id: 'h2', url: 'https://api.dicebear.com/7.x/bottts/svg?seed=RobotBody&colors=c0c0c0', timestamp: Date.now() },
+  { id: 'h3', url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Micky&top=winterHat03&clothing=collarAndSweater&skinColor=f8fdff&eyes=surprised&clothingColor=black', timestamp: Date.now() },
+  { id: 'h4', url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Daffy&top=hat&eyebrows=angry&mouth=scream&skinColor=fdb03d', timestamp: Date.now() },
+  { id: 'h5', url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Catwoman&top=longHairStraight&hairColor=000000&clothing=blazerAndShirt&clothingColor=black&accessories=prescription02', timestamp: Date.now() },
+  { id: 'h6', url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=BatMan&top=hat&accessories=eyepatch&clothing=graphicShirt&clothingColor=black&skinColor=d1d4f9', timestamp: Date.now() },
+  { id: 'h7', url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Clown&top=frizzle&hairColor=f24e1e&mouth=smile&skinColor=f8fdff&eyes=surprised&clothing=overall', timestamp: Date.now() },
+];
+
+// Configuration for the specific character styles requested
+const CHARACTER_STYLES = [
+    { name: "Super Hero", prompt: "Super Hero, wearing a cape and mask, muscular build, comic book hero style" },
+    { name: "Robot Body", prompt: "Robot body with the uploaded human face, cyborg, mechanical metal parts, sci-fi style" },
+    { name: "Mickey Mouse", prompt: "Mickey Mouse style, big round mouse ears, cartoon mouse face, disney animation style" },
+    { name: "Daddy Duck", prompt: "Daffy Duck style, cartoon duck bill, black feathers, expressive looney tunes style" },
+    { name: "Catwoman", prompt: "Catwoman style, black leather mask, cat ears, sleek, comic book villain style" },
+    { name: "Batman", prompt: "Batman, dark knight cowl/mask, moody comic book style, gotham city vibes" },
+    { name: "Funny Clown", prompt: "Funny Circus Clown, colorful wig, red foam nose, face paint, big smile" }
+];
+const App: React.FC = () => {
+  const [uploadedImage, setUploadedImage] = useState<string | null>(INITIAL_UPLOAD);
+  const [generatedImage, setGeneratedImage] = useState<string | null>(INITIAL_RESULT);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [history, setHistory] = useState<GeneratedImage[]>(INITIAL_HISTORY);
+  const [showPricing, setShowPricing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Adjustment States
+  const [zoom, setZoom] = useState<number>(1);
+  const [rotation, setRotation] = useState<number>(0);
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setUploadedImage(reader.result as string);
+        setGeneratedImage(null); // Reset result when new image uploaded
+        // Reset adjustments
+        setZoom(1);
+        setRotation(0);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Helper to capture the current state of the uploaded image (zoomed/rotated)
+  const getProcessedImage = async (): Promise<string> => {
+    if (!uploadedImage) throw new Error("No image to process");
+
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "Anonymous"; // Handle CORS for the initial Unsplash image if needed
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        // Set canvas size to a square standard (e.g., 512x512) to match our UI container ratio
+        const size = 512;
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        
+        if (!ctx) {
+          reject(new Error("Could not get canvas context"));
+          return;
+        }
+
+        // Fill background white
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, size, size);
+
+        // Move to center for rotation/scaling
+        ctx.translate(size / 2, size / 2);
+        
+        // Apply transformations
+        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.scale(zoom, zoom);
+
+        // Calculate 'object-cover' equivalent dimensions
+        // We want the image to cover the 512x512 area fully
+        const scaleFactor = Math.max(size / img.width, size / img.height);
+        const drawWidth = img.width * scaleFactor;
+        const drawHeight = img.height * scaleFactor;
+
+        // Draw centered relative to the translated origin
+        ctx.drawImage(img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+
+        resolve(canvas.toDataURL('image/jpeg', 0.9));
+      };
+      img.onerror = (err) => reject(err);
+      img.src = uploadedImage;
+    });
+  };
+
+  const handleGenerate = async () => {
+    if (!uploadedImage) return;
+
+    setIsGenerating(true);
+    setHistory([]); 
+
+    try {
+      // Capture the adjusted image
+      const processedImageBase64 = await getProcessedImage();
+
+      // 1. Generate Main Center Image
+      // We prioritize the main image so the user sees a result quickly.
+      const mainPrompt = "funny cartoon character, exaggerated features, colorful, circus style, caricature";
+      
+      let mainSuccess = false;
+      let abortLoop = false;
+
+      try {
+        const mainResult = await generateFunnyFace(processedImageBase64, mainPrompt);
+        setGeneratedImage(mainResult);
+        mainSuccess = true;
+      } catch (err: any) {
+        console.error("Main image generation failed:", err);
+        // If the main generation failed due to quota, we should probably stop everything
+        if (err.message?.includes('429') || err.status === 429) {
+            alert("The Circus is too busy right now! (Quota Exceeded). Please try again in a minute.");
+            abortLoop = true;
+        }
+      }
+      if (abortLoop) {
+          setIsGenerating(false);
+          return;
+      }
+
+      // 2. Generate Ground Images (Character Variations) SEQUENTIALLY
+      // Generating in parallel via Promise.all causes 429 Quota Exceeded errors.
+      // We process them one by one with a small delay to respect rate limits.
+      
+      for (const style of CHARACTER_STYLES) {
+         try {
+             // Increased delay to 6 seconds to handle stricter rate limits
+             if (mainSuccess || history.length > 0) {
+                 await new Promise(resolve => setTimeout(resolve, 6000));
+             }
+
+             const url = await generateFunnyFace(processedImageBase64, style.prompt);
+             
+             // Update history incrementally so user sees them pop in one by one
+             setHistory(prev => [
+                 ...prev, 
+                 {
+                     id: `gen-${Date.now()}-${style.name}`,
+                     url: url,
+                     timestamp: Date.now()
+                 }
+             ]);
+
+         } catch (err) {
+             console.warn(`Skipping style ${style.name} due to generation error`, err);
+             // Continue to next style even if this one fails
+         }
+      }
+
+    } catch (error) {
+      console.error("Critical generation error", error);
+      alert("Oops! The clown dropped his brushes. Try again later.");
+      if (history.length === 0) setHistory(INITIAL_HISTORY);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleDownload = () => {
+    if (generatedImage) {
+      const link = document.createElement('a');
+      link.href = generatedImage;
+      link.download = `funny-face-${Date.now()}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+  return (
+    <div className="min-h-screen w-full overflow-x-hidden relative flex flex-col items-center">
+      
+      {/* --- PRICING BUTTON (TOP LEFT) --- */}
+      <div className="absolute top-4 left-4 z-50">
+        <button 
+          onClick={() => setShowPricing(true)}
+          className="bg-yellow-400 hover:bg-yellow-300 text-red-700 font-banner border-4 border-red-600 px-4 py-2 rounded-lg shadow-xl transform rotate-[-5deg] hover:rotate-0 transition-all flex items-center gap-2 group"
+        >
+          <span className="text-2xl group-hover:scale-125 transition-transform">🎟️</span>
+          <span className="text-xl md:text-2xl">More Downloads</span>
+        </button>
+      </div>
+
+      {/* --- PRICING MODAL --- */}
+      {showPricing && (
+        <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
+           <div className="bg-[#FFF5E1] max-w-3xl w-full rounded-3xl border-8 border-red-600 p-8 relative shadow-2xl overflow-y-auto max-h-[90vh]">
+              <button 
+                onClick={() => setShowPricing(false)}
+                className="absolute top-2 right-2 md:-top-6 md:-right-6 bg-red-600 text-white w-10 h-10 md:w-12 md:h-12 rounded-full font-bold text-xl border-4 border-white shadow-lg hover:scale-110 transition-transform flex items-center justify-center"
+              >
+                X
+              </button>
+              
+              <h2 className="text-3xl md:text-5xl font-banner text-center text-red-600 mb-2 drop-shadow-sm">
+                Get More Funny Faces!
+              </h2>
+              <p className="text-center text-gray-700 font-circus mb-8">High Quality Prints • No Watermarks</p>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                  {/* Option 1 */}
+                  <div className="bg-white p-6 rounded-xl border-4 border-yellow-400 shadow-md flex flex-col items-center hover:scale-[1.02] transition-transform">
+                      <div className="text-5xl mb-4">🤡</div>
+                      <h3 className="font-circus text-2xl mb-2 text-center text-red-800">Option #1</h3>
+                      <p className="text-center text-gray-600 font-bold mb-2">Any three images</p>
+                      <ul className="text-sm text-gray-500 mb-4 list-disc list-inside">
+                        <li>High Resolution</li>
+                        <li>Instant Download</li>
+                        <li>Print Ready</li>
+                      </ul>
+                      <div className="text-4xl font-banner text-green-600 mb-6">$39.95</div>
+                      <button className="bg-blue-600 text-white font-bold py-3 px-8 rounded-full shadow hover:bg-blue-700 transition-colors w-full uppercase tracking-wider">
+                          Buy Now
+                      </button>
+                  </div>
+
+                  {/* Option 2 */}
+                  <div className="bg-white p-6 rounded-xl border-4 border-yellow-400 shadow-md flex flex-col items-center hover:scale-[1.02] transition-transform relative overflow-hidden ring-4 ring-yellow-200 ring-opacity-50">
+                      <div className="absolute top-0 right-0 bg-red-600 text-white text-xs font-bold px-4 py-1 rounded-bl-lg shadow-sm">BEST VALUE</div>
+                      <div className="text-5xl mb-4">🎪</div>
+                      <h3 className="font-circus text-2xl mb-2 text-center text-red-800">Option #2</h3>
+                      <p className="text-center text-gray-600 font-bold mb-2">All six images</p>
+                       <ul className="text-sm text-gray-500 mb-4 list-disc list-inside">
+                        <li>Super High Resolution</li>
+                        <li>Priority Rendering</li>
+                        <li>Commercial License</li>
+                      </ul>
+                      <div className="text-4xl font-banner text-green-600 mb-6">$59.95</div>
+                      <button className="bg-blue-600 text-white font-bold py-3 px-8 rounded-full shadow hover:bg-blue-700 transition-colors w-full uppercase tracking-wider">
+                          Buy Now
+                      </button>
+                  </div>
+              </div>
+
+              <div className="mt-8 text-center border-t-2 border-red-200 pt-6">
+                  <p className="font-bold text-gray-500 mb-4 text-sm uppercase tracking-widest">Secure Payment Methods</p>
+                  <div className="flex justify-center gap-6 items-center opacity-80 grayscale hover:grayscale-0 transition-all duration-500">
+                      <div className="flex flex-col items-center gap-1">
+                          <span className="text-3xl">💳</span>
+                          <span className="text-xs font-bold">Stripe</span>
+                      </div>
+                      <div className="flex flex-col items-center gap-1">
+                          <span className="text-3xl">🅿️</span>
+                          <span className="text-xs font-bold">PayPal</span>
+                      </div>
+                      <div className="flex flex-col items-center gap-1">
+                          <span className="text-3xl">🏦</span>
+                          <span className="text-xs font-bold">Credit Card</span>
+                      </div>
+                  </div>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* --- ROOFTOP AREA --- */}
+<div className="relative w-full max-w-5xl mt-10 z-30">
+        
+        {/* Moon Shape / Dome */}
+        <div className="w-full h-64 bg-yellow-100 rounded-t-[100%] relative overflow-hidden border-b-8 border-yellow-400 shadow-2xl tent-roof-stripes">
+             {/* Arched Banner */}
+             <div className="absolute top-1/4 left-0 right-0 flex justify-center">
+                <svg viewBox="0 0 500 150" className="w-[600px] h-[200px]">
+                    <path id="curve" d="M 50,150 A 200,100 0 0,1 450,150" fill="transparent"/>
+                    <text width="500">
+                        <textPath xlinkHref="#curve" startOffset="50%" textAnchor="middle" className="fill-yellow-200 font-banner text-5xl stroke-black stroke-2 tracking-widest" style={{ textShadow: '2px 2px 0 #000' }}>
+                           MajicMan88's
+                        </textPath>
+                    </text>
+                </svg>
+             </div>
+             <div className="absolute top-[60%] left-0 right-0 text-center">
+                <h1 className="text-4xl font-banner text-black drop-shadow-lg tracking-wider">Funny Faces</h1>
+             </div>
+        </div>
+
+        {/* Balloons */}
+        <Balloon color="#FF5252" top="-20px" left="10%" delay="0.1s" />
+        <Balloon color="#448AFF" top="-40px" left="25%" delay="0.5s" scale={1.2} />
+        <Balloon color="#69F0AE" top="-10px" left="70%" delay="0.3s" />
+        <Balloon color="#E040FB" top="-30px" left="85%" delay="0.7s" scale={1.1} />
+
+      </div>
+
+      {/* --- TENT BODY --- */}
+      <div className="relative w-full max-w-6xl -mt-4 z-20 mx-auto">
+        
+        {/* Main Tent Structure */}
+        <div className="w-full min-h-[800px] bg-white relative shadow-2xl flex flex-col">
+            
+            {/* Wavy Curtains / Entrance */}
+            <div className="absolute top-0 left-0 h-full w-32 md:w-48 bg-red-600 z-20" style={{ clipPath: 'polygon(0 0, 100% 0, 80% 10%, 100% 20%, 80% 30%, 100% 40%, 80% 50%, 100% 60%, 80% 70%, 100% 80%, 80% 90%, 100% 100%, 0 100%)' }}></div>
+            <div className="absolute top-0 right-0 h-full w-32 md:w-48 bg-red-600 z-20" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 0 100%, 20% 90%, 0 80%, 20% 70%, 0 60%, 20% 50%, 0 40%, 20% 30%, 0 20%, 20% 10%)' }}></div>
+
+            {/* Interior Background */}
+            <div className="absolute inset-0 bg-[#FFF5E1] z-0 border-x-8 border-red-700"></div>
+
+            {/* --- ENTRANCE BANNER --- */}
+            <div className="relative z-30 w-full flex justify-center mt-2">
+                <div className="bg-green-300 border-4 border-green-500 px-12 py-4 rounded-full shadow-lg transform rotate-1 hover:rotate-0 transition-transform duration-300">
+                    <h2 className="text-2xl md:text-4xl font-circus text-green-900 uppercase tracking-widest">
+                        Have A Really Great Smile
+                    </h2>
+                </div>
+            </div>
+
+            {/* --- MAIN CONTENT AREA (INSIDE) --- */}
+            <div className="relative z-10 flex-1 flex flex-col items-center pt-12 pb-4 px-12 md:px-24">
+                
+                <div className="flex flex-col md:flex-row items-start justify-center w-full gap-8 mt-8">
+                    
+                    {/* LEFT: UPLOAD AREA & ADJUSTMENT */}
+                    <div className="flex flex-col items-center gap-4">
+                        <h3 className="font-circus text-2xl text-red-600 tracking-wider">Upload Selfie Image</h3>
+                        <div className="relative group">
+                            <div className="w-64 h-64 md:w-80 md:h-80 bg-white border-8 border-dashed border-red-300 rounded-3xl flex items-center justify-center overflow-hidden shadow-inner relative z-10">
+                                {uploadedImage ? (
+                                    <img 
+                                      src={uploadedImage} 
+                                      alt="Original" 
+                                      className="w-full h-full object-cover transition-transform duration-200 ease-out"
+                                      style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }} 
+                                    />
+                                ) : (
+                                    <div className="text-center p-4">
+                                        <span className="text-6xl mb-2 block">👩</span>
+                                        <p className="text-gray-400 font-circus">Upload a Pretty Face</p>
+                                    </div>
+                                )}
+                                <input 
+                                    type="file" 
+                                    ref={fileInputRef}
+                                    onChange={handleFileUpload}
+                                    accept="image/*"
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                />
+                            </div>
+                        </div>
+
+                        {/* ADJUSTMENT CONTROLS */}
+                        {uploadedImage && (
+                          <div className="w-64 md:w-80 bg-yellow-100 p-4 rounded-xl border-4 border-yellow-300 shadow-md">
+                              <h3 className="font-circus text-center text-yellow-800 mb-2">Adjust Face</h3>
+                              <div className="flex flex-col gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-bold w-12 text-right">Zoom:</span>
+                                  <input 
+                                    type="range" 
+                                    min="1" 
+                                    max="3" 
+                                    step="0.1" 
+                                    value={zoom} 
+                                    onChange={(e) => setZoom(parseFloat(e.target.value))}
+                                    className="w-full accent-red-500 cursor-pointer"
+                                  />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-bold w-12 text-right">Rotate:</span>
+                                  <input 
+                                    type="range" 
+                                    min="-180" 
+                                    max="180" 
+                                    step="5" 
+                                    value={rotation} 
+                                    onChange={(e) => setRotation(parseFloat(e.target.value))}
+                                    className="w-full accent-blue-500 cursor-pointer"
+                                  />
+                                </div>
+                              </div>
+                              <div className="mt-2 text-center">
+                                <button 
+                                   onClick={() => fileInputRef.current?.click()}
+                                   className="text-xs text-blue-600 hover:underline font-bold"
+                                >
+                                   Change Photo
+                                </button>
+                              </div>
+                          </div>
+                        )}
+                        {!uploadedImage && (
+                             <button 
+                                onClick={() => fileInputRef.current?.click()}
+                                className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-full border-b-4 border-blue-700 active:border-b-0 active:translate-y-1 transition-all font-circus"
+                            >
+                                Upload Photo
+                            </button>
+                        )}
+                    </div>
+
+                    {/* MIDDLE: ACTION BUTTON */}
+                    <div className="flex flex-col items-center justify-center mx-4 self-center pt-10 md:pt-0">
+                        <button 
+                            onClick={handleGenerate}
+                            disabled={!uploadedImage || isGenerating}
+                            className={`
+                                w-24 h-24 rounded-full bg-yellow-400 border-4 border-yellow-600 
+                                shadow-xl flex items-center justify-center transform transition-all 
+                                ${isGenerating ? 'animate-spin' : 'hover:scale-110 active:scale-95'}
+                                ${!uploadedImage ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                            `}
+                        >
+                            <span className="text-4xl">✨</span>
+                        </button>
+                        <span className="mt-2 font-circus text-red-600 text-sm font-bold bg-white px-2 py-1 rounded">MAGIC!</span>
+                    </div>
+
+                    {/* RIGHT: RESULT AREA */}
+                    <div className="relative self-start md:self-auto group">
+                        <div className="w-64 h-64 md:w-80 md:h-80 bg-white border-8 border-yellow-400 rounded-3xl flex items-center justify-center overflow-hidden shadow-lg relative">
+                             {isGenerating && !generatedImage ? (
+                                 <div className="flex flex-col items-center">
+                                     <div className="animate-bounce text-6xl">🤡</div>
+                                     <p className="mt-4 font-circus text-yellow-600">Drawing...</p>
+                                 </div>
+                             ) : generatedImage ? (
+                                 <>
+                                     <img src={generatedImage} alt="Funny Result" className="w-full h-full object-cover" />
+                                     <button 
+                                        onClick={handleDownload}
+                                        className="absolute bottom-3 right-3 bg-green-500 hover:bg-green-600 text-white p-3 rounded-full shadow-lg border-2 border-white transition-transform hover:scale-110 z-20"
+                                        title="Download Funny Face"
+                                     >
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-6 h-6">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M12 12.75l-3-3m3 3l3-3m-3 3V3" />
+                                        </svg>
+                                     </button>
+                                 </>
+                             ) : (
+                                 <div className="text-center p-4 opacity-50">
+                                     <span className="text-6xl mb-2 block">🤪</span>
+                                     <p className="text-gray-400 font-circus">Funny Version Here</p>
+                                 </div>
+                             )}
+                        </div>
+                        
+                        {/* DECORATIVE CLOWN */}
+                        <div className="absolute -bottom-2 -right-20 w-32 h-32 hidden md:block pointer-events-none">
+                             {/* Simple CSS/SVG Clown Representation */}
+                             <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-lg">
+                                <circle cx="50" cy="50" r="40" fill="#FFF" stroke="#000" strokeWidth="2"/>
+                                <circle cx="35" cy="40" r="5" fill="#000"/>
+                                <circle cx="65" cy="40" r="5" fill="#000"/>
+                                <circle cx="50" cy="55" r="10" fill="#F00"/>
+                                <path d="M 30 70 Q 50 90 70 70" stroke="#F00" strokeWidth="3" fill="none"/>
+                                <path d="M 10 30 Q 50 0 90 30" fill="none" stroke="purple" strokeWidth="5" /> {/* Hat rim */}
+                                <path d="M 30 20 L 50 -10 L 70 20 Z" fill="purple" /> {/* Hat */}
+                             </svg>
+                        </div>
+                    </div>
+                </div>
+
+                {/* --- GROUND AREA (GALLERY) --- */}
+                <div className="w-full mt-20">
+                    <div className="w-full border-t-4 border-dashed border-gray-300 my-4 relative">
+                        <span className="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-[#FFF5E1] px-4 text-gray-500 font-circus text-sm">
+                            On The Ground (Funny Characters)
+                        </span>
+                    </div>
+                    
+                    <div className="flex flex-wrap justify-center gap-4 pb-8 min-h-[140px]">
+                        {isGenerating && history.length === 0 ? (
+                           // Loading placeholders for ground
+                           <div className="w-full flex justify-center py-4">
+                              <span className="text-yellow-600 font-circus animate-pulse">Summoning performers one by one...</span>
+                           </div>
+                        ) : (
+                           history.map((item, index) => (
+                              <div 
+                                  key={item.id || index} 
+                                  className="w-32 h-32 bg-white border-4 border-gray-200 rounded-lg shadow-md transform rotate-1 hover:rotate-0 transition-all duration-300 overflow-hidden flex items-center justify-center group relative animate-in fade-in zoom-in duration-500"
+                                  style={{ transform: `rotate(${(index % 2 === 0 ? 2 : -2)}deg)` }}
+                              >
+                                  {item.url ? (
+                                      <>
+                                        <img src={item.url} alt="Gallery" className="w-full h-full object-cover cursor-pointer group-hover:scale-110 transition-transform" onClick={() => setGeneratedImage(item.url)} />
+                                        {/* Optional tooltip or label could go here */}
+                                      </>
+                                  ) : (
+                                      <div className="w-full h-full bg-gray-100 flex items-center justify-center text-gray-300">
+                                          Empty
+                                      </div>
+                                  )}
+                              </div>
+                          ))
+                        )}
+                    </div>
+                </div>
+
+            </div>
+        </div>
+        
+        {/* Tent Floor Decoration */}
+        <div className="w-full h-8 bg-green-700 mt-0 rounded-b-lg"></div>
+      </div>
+
+      {/* --- ADSENSE SPACES --- */}
+      <div className="w-full max-w-6xl mt-6 mb-12 px-4 z-20 flex flex-col md:flex-row gap-6 justify-center">
+         {/* Ad Space 1 */}
+         <div className="flex-1 min-h-[250px] bg-white/90 border-4 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-gray-400 shadow-sm">
+             <span className="font-bold text-lg">ADVERTISEMENT SPACE 1</span>
+             <span className="text-sm">(Google AdSense)</span>
+         </div>
+         {/* Ad Space 2 */}
+         <div className="flex-1 min-h-[250px] bg-white/90 border-4 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-gray-400 shadow-sm">
+             <span className="font-bold text-lg">ADVERTISEMENT SPACE 2</span>
+             <span className="text-sm">(Google AdSense)</span>
+         </div>
+      </div>
+      
+    </div>
+  );
+};
+
+export default App;
+
+
+
+
