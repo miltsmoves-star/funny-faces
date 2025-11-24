@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Funny Faces Online</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎭 Funny Faces Online 🎭</h1>
+            <p>Create and customize hilarious faces!</p>
+        </header>
+
+        <main>
+            <div class="face-display">
+                <div class="face" id="faceDisplay">
+                    <div class="eyes">
+                        <span class="eye left" id="leftEye">👁️</span>
+                        <span class="eye right" id="rightEye">👁️</span>
+                    </div>
+                    <div class="nose" id="nose">👃</div>
+                    <div class="mouth" id="mouth">😀</div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <div class="control-group">
+                    <h3>Eyes</h3>
+                    <div class="button-group">
+                        <button onclick="changeEyes('👁️')">👁️ Normal</button>
+                        <button onclick="changeEyes('👀')">👀 Wide</button>
+                        <button onclick="changeEyes('😳')">😳 Shocked</button>
+                        <button onclick="changeEyes('😵')">😵 Dizzy</button>
+                        <button onclick="changeEyes('🤩')">🤩 Star</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>Nose</h3>
+                    <div class="button-group">
+                        <button onclick="changeNose('👃')">👃 Normal</button>
+                        <button onclick="changeNose('🐽')">🐽 Pig</button>
+                        <button onclick="changeNose('🔴')">🔴 Clown</button>
+                        <button onclick="changeNose('🥕')">🥕 Carrot</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>Mouth</h3>
+                    <div class="button-group">
+                        <button onclick="changeMouth('😀')">😀 Happy</button>
+                        <button onclick="changeMouth('😁')">😁 Grin</button>
+                        <button onclick="changeMouth('😂')">😂 Laugh</button>
+                        <button onclick="changeMouth('🤪')">🤪 Silly</button>
+                        <button onclick="changeMouth('😝')">😝 Tongue</button>
+                        <button onclick="changeMouth('🤐')">🤐 Zip</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>Actions</h3>
+                    <div class="button-group">
+                        <button onclick="randomizeFace()" class="primary-btn">🎲 Randomize</button>
+                        <button onclick="resetFace()" class="secondary-btn">🔄 Reset</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Create your own funny faces and have fun! 🎉</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
