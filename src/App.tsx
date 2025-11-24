@@ -6,6 +6,7 @@ function App() {
   
   // Example of accessing the API_KEY from environment
   const apiKey = import.meta.env.VITE_API_KEY
+  const isApiKeyConfigured = !!apiKey
 
   return (
     <>
@@ -20,9 +21,9 @@ function App() {
           Edit <code>src/App.tsx</code> and save to test HMR
         </p>
       </div>
-      {apiKey && (
+      {isApiKeyConfigured && (
         <p className="read-the-docs">
-          API Key configured: {apiKey.substring(0, 10)}...
+          API Key: Configured ✓
         </p>
       )}
     </>
