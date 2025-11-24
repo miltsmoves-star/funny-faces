@@ -15,11 +15,8 @@ function changeEyes(emoji) {
     const leftEye = document.getElementById('leftEye');
     const rightEye = document.getElementById('rightEye');
     
-    // Extract just the emoji part if it's a complex emoji
-    const eyeEmoji = emoji.includes('️') ? emoji : emoji;
-    
-    leftEye.textContent = eyeEmoji;
-    rightEye.textContent = eyeEmoji;
+    leftEye.textContent = emoji;
+    rightEye.textContent = emoji;
     
     // Add animation
     leftEye.style.animation = 'none';
@@ -54,6 +51,9 @@ function changeMouth(emoji) {
     }, 200);
 }
 
+// Animation constants
+const SHAKE_DURATION = 500;
+
 // Randomize face
 function randomizeFace() {
     const randomEyes = eyeOptions[Math.floor(Math.random() * eyeOptions.length)];
@@ -67,10 +67,10 @@ function randomizeFace() {
     
     // Add shake effect to the face
     const face = document.getElementById('faceDisplay');
-    face.style.animation = 'shake 0.5s';
+    face.style.animation = `shake ${SHAKE_DURATION}ms`;
     setTimeout(() => {
         face.style.animation = '';
-    }, 500);
+    }, SHAKE_DURATION);
 }
 
 // Reset face to default
@@ -79,17 +79,6 @@ function resetFace() {
     changeNose(defaultFace.nose);
     changeMouth(defaultFace.mouth);
 }
-
-// Add shake animation dynamically
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes shake {
-        0%, 100% { transform: translateX(0); }
-        10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
-        20%, 40%, 60%, 80% { transform: translateX(5px); }
-    }
-`;
-document.head.appendChild(style);
 
 // Add smooth transition to face elements
 document.addEventListener('DOMContentLoaded', () => {
