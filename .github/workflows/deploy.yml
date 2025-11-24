@@ -27,11 +27,20 @@ jobs:
       
       - name: Setup Pages
         uses: actions/configure-pages@v4
-      
+        with:
+          enablement: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Optional build step — uncomment if your project needs building and outputs to ./public
+      # - name: Install and build
+      #   run: |
+      #     npm ci
+      #     npm run build
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'
+          path: './public'
       
       - name: Deploy to GitHub Pages
         id: deployment
