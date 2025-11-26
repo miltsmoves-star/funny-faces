@@ -10,7 +10,7 @@ const INITIAL_UPLOAD = "https://images.unsplash.com/photo-1494790108377-be9c29b2
 const INITIAL_RESULT = "https://api.dicebear.com/7.x/avataaars/svg?seed=FunnyMain&top=bigHair&hairColor=f24e1e&accessories=prescription02&clothing=collarAndSweater";
 
 // Initial mock history (will be replaced by generated images)
-const INITIAL_HISTORY: GeneratedImage[] = [
+const INITIAL_HISTORY:> GeneratedImage>( ) = [
   { id: 'h1', url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=SuperHero&clothing=blazerAndShirt&clothingColor=3c4f76&top=longHairCurvy&hairColor=4a312c&accessories=kurt', timestamp: Date.now() },
   { id: 'h2', url: 'https://api.dicebear.com/7.x/bottts/svg?seed=RobotBody&colors=c0c0c0', timestamp: Date.now() },
   { id: 'h3', url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Micky&top=winterHat03&clothing=collarAndSweater&skinColor=f8fdff&eyes=surprised&clothingColor=black', timestamp: Date.now() },
@@ -18,7 +18,7 @@ const INITIAL_HISTORY: GeneratedImage[] = [
   { id: 'h5', url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Catwoman&top=longHairStraight&hairColor=000000&clothing=blazerAndShirt&clothingColor=black&accessories=prescription02', timestamp: Date.now() },
   { id: 'h6', url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=BatMan&top=hat&accessories=eyepatch&clothing=graphicShirt&clothingColor=black&skinColor=d1d4f9', timestamp: Date.now() },
   { id: 'h7', url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Clown&top=frizzle&hairColor=f24e1e&mouth=smile&skinColor=f8fdff&eyes=surprised&clothing=overall', timestamp: Date.now() },
-];
+);
 
 // Configuration for the specific character styles requested
 const CHARACTER_STYLES = [
